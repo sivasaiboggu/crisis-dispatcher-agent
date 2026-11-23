@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crisis Dispatcher — Simulated Training Board</title>
+<meta name="description" content="Simulated emergency-dispatch training board: triage, prioritise, dispatch on a live map. All incidents are simulated — no real emergencies.">
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1>Crisis <span>Dispatch</span></h1>
+    <p>Training board — triage, prioritise, dispatch</p>
+  </div>
+  <span class="sim-badge" title="All incidents are simulated">Simulated</span>
+  <div class="top-controls">
+    <label for="scenario">Scenario</label>
+    <select id="scenario"></select>
+    <span class="clock" id="clock" title="Scenario clock">00:00</span>
+    <label for="speed">Speed</label>
+    <select id="speed">
+      <option value="1">1×</option>
+      <option value="2">2×</option>
+      <option value="4">4×</option>
+    </select>
+    <button class="btn primary" id="btn-start">Start scenario</button>
+    <button class="btn" id="btn-reset">Reset</button>
+    <button class="btn" id="btn-inject">Inject incident</button>
+    <button class="btn" id="btn-settings">Settings</button>
+  </div>
+</header>
+
+<section class="stats" aria-label="Board totals">
+  <div class="stat"><div class="num" id="stat-incidents">0</div><div class="lbl">Incidents in</div></div>
+  <div class="stat"><div class="num warn" id="stat-p1">0</div><div class="lbl">P1 unassigned</div></div>
+  <div class="stat"><div class="num" id="stat-available">11</div><div class="lbl">Units available</div></div>
+  <div class="stat"><div class="num" id="stat-dispatched">0</div><div class="lbl">Dispatches made</div></div>
+  <div class="stat"><div class="num" id="stat-eta">—</div><div class="lbl">Average ETA (min)</div></div>
+</section>
+
+<main class="board">
+  <!-- Incident queue -->
+  <section class="col" aria-label="Incident queue">
+    <div class="col-head"><h2>Incident queue</h2><span class="count" id="queue-count">0</span><span class="hint">sorted by triage score</span></div>
+    <div class="col-body" id="queue"></div>
+  </section>
+
+  <!-- Map -->
+  <section class="col map-col" aria-label="Map">
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="map-legend" aria-label="Map legend">
+        <div><strong style="color:var(--text)">Severity</strong></div>
+        <div class="li"><span class="dot" style="background:#dc2626"></span> P1 — critical</div>
+        <div class="li"><span class="dot" style="background:#d97706"></span> P2 — urgent</div>
+        <div class="li"><span class="dot" style="background:#ca8a04"></span> P3 — standard</div>
+        <div class="li"><span class="dot sq" style="background:#0f172a;border:2px solid #d97706"></span> Unit</div>
+      </div>
+      <div class="map-note" id="map-note" hidden>Map tiles unavailable — street grid shown.</div>
+      <div class="detail" id="detail" hidden></div>
+    </div>
+  </section>
+
+  <!-- Units + dispatch log -->
+  <section class="col" aria-label="Units and dispatch log">
+    <div class="col-head"><h2>Units</h2><span class="count" id="units-count">11</span><span class="hint">fictional fleet</span></div>
+    <div class="col-body" id="units"></div>
+    <div class="log">
+      <div class="col-head"><h2>Dispatch log</h2><span class="hint" id="rationale-status">rule-based rationale</span></div>
+      <div class="log-list" id="log"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span><b>SIMULATED</b> — training scenario, no real emergencies.</span>
+  <span>No connection to 108 / 112 or any real dispatch service.</span>
+  <span>Map © <a href="https://www.openstreetmap.org/copyright" style="color:inherit">OpenStreetMap</a> contributors. Incident points are fictional.</span>
+  <span id="footer-gemini">Gemini rationale: not configured — rule-based rationale in use.</span>
+</footer>
+
+<!-- Inject incident dialog -->
+<dialog id="dlg-inject">
+  <form method="dialog" id="inject-form">
+    <div class="dlg-body">
+      <h2>Inject incident</h2>
+      <p>Add a surprise report mid-scenario. The pipeline re-triages and re-prioritises immediately.</p>
+      <label for="inj-type">Type</label>
+      <select id="inj-type">
+        <option value="fire">Fire</option>
+        <option value="road-traffic">Road traffic collision</option>
+        <option value="medical">Medical emergency</option>
+        <option value="collapse">Building collapse</option>
+        <option value="hazmat">Hazmat leak</option>
+        <option value="crime">Public safety</option>
+      </select>
+      <label for="inj-cas">Casualties</label>
+      <input type="number" id="inj-cas" min="0" max="20" value="2">
+      <label for="inj-place">Location (fictional point)</label>
+      <select id="inj-place"></select>
+      <div class="check-row"><input type="checkbox" id="inj-trapped"><label for="inj-trapped" style="margin:0;font-weight:400">People trapped</label></div>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" id="inj-submit" value="ok">Inject now</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Settings dialog -->
+<dialog id="dlg-settings">
+  <div class="dlg-body">
+    <h2>Settings</h2>
+    <p>Optional: a free Gemini API key lets the model rewrite each dispatch rationale in plainer language. The facts always come from the decision engine, never from the model. Without a key, the rule-based rationale is used — the demo works fully either way.</p>
+    <label for="gemini-key">Gemini API key</label>
+    <input type="password" id="gemini-key" placeholder="Paste your free key from Google AI Studio" autocomplete="off">
+    <p style="font-size:12.5px">Model: <span class="mono">gemini-2.5-flash</span>. The key is stored in this browser's localStorage only. It is sent only to Google's API when a dispatch happens, and never anywhere else.</p>
+    <div class="dlg-status" id="settings-status"></div>
+  </div>
+  <div class="dlg-actions">
+    <button class="btn" id="btn-key-clear">Clear key</button>
+    <button class="btn" id="btn-key-test">Test key</button>
+    <button class="btn primary" id="btn-key-save">Save key</button>
+    <button class="btn" id="btn-settings-close">Close</button>
+  </div>
+</dialog>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="src/engine.js"></script>
+<script src="src/scenarios.js"></script>
+<script src="src/gemini.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
